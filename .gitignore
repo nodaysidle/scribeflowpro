@@ -1,0 +1,27 @@
+# Build artifacts
+.build/
+Build/
+DerivedData/
+*.app
+
+# SwiftPM
+Package.resolved
+.swiftpm/
+
+# macOS
+.DS_Store
+*.xcuserstate
+xcuserdata/
+
+# Icon build artifacts
+AppIcon.iconset/
+AppIcon.png
+icon_gen.py
+
+# IDE
+.vscode/
+*.xcworkspace/
+
+# Temporary files
+*.tmp
+*.log
