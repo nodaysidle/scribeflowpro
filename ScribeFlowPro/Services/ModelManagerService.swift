@@ -226,6 +226,85 @@ final class ModelManagerService {
         continuation.finish()
     }
 
+    // MARK: - Scan Local Models
+
+    /// Scans ~/Models/ for locally present models not yet registered in SwiftData.
+    /// Handles both flat (`org_model`) and nested (`org/model`) directory layouts.
+    func scanAndRegisterLocalModels(modelContext: ModelContext) {
+        let descriptor = FetchDescriptor<InstalledModel>()
+        let existing = (try? modelContext.fetch(descriptor)) ?? []
+        let existingPaths = Set(existing.map { $0.filePath })
+
+        let fm = FileManager.default
+        guard let topLevel = try? fm.contentsOfDirectory(
+            at: modelsDirectory, includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return }
+
+        for dir in topLevel {
+            guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+
+            // Check for nested org/model dirs (e.g., mlx-community/whisper-medium-mlx)
+            let subdirs = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+            let modelDirs = subdirs.filter { sub in
+                (try? sub.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                && fm.fileExists(atPath: sub.appendingPathComponent("config.json").path)
+            }
+
+            if !modelDirs.isEmpty {
+                for modelDir in modelDirs {
+                    registerIfNew(modelDir: modelDir, orgName: dir.lastPathComponent, modelContext: modelContext, existingPaths: existingPaths)
+                }
+            } else if fm.fileExists(atPath: dir.appendingPathComponent("config.json").path) {
+                // Flat layout (e.g., mlx-community_whisper-medium-mlx)
+                registerIfNew(modelDir: dir, orgName: nil, modelContext: modelContext, existingPaths: existingPaths)
+            }
+        }
+
+        try? modelContext.save()
+    }
+
+    private func registerIfNew(
+        modelDir: URL,
+        orgName: String?,
+        modelContext: ModelContext,
+        existingPaths: Set<String>
+    ) {
+        guard !existingPaths.contains(modelDir.path) else { return }
+
+        let fm = FileManager.default
+        let modelName = modelDir.lastPathComponent
+        let repoGuess: String
+        if let org = orgName {
+            repoGuess = "\(org)/\(modelName)"
+        } else {
+            repoGuess = modelName.replacingOccurrences(of: "_", with: "/")
+        }
+
+        // Compute total size
+        let enumerator = fm.enumerator(at: modelDir, includingPropertiesForKeys: [.fileSizeKey])
+        var totalSize: Int64 = 0
+        while let fileURL = enumerator?.nextObject() as? URL {
+            if let size = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize {
+                totalSize += Int64(size)
+            }
+        }
+
+        let modelType: ModelType = repoGuess.lowercased().contains("whisper") ? .whisper : .llm
+        let quantization = parseQuantization(from: modelDir)
+
+        let model = InstalledModel(
+            name: repoGuess,
+            huggingFaceRepo: repoGuess,
+            filePath: modelDir.path,
+            sizeBytes: totalSize,
+            modelType: modelType,
+            quantization: quantization
+        )
+        modelContext.insert(model)
+
+        Self.logger.info("Auto-registered model: \(repoGuess) at \(modelDir.path)")
+    }
+
     // MARK: - Delete
 
     func deleteModel(_ model: InstalledModel, modelContext: ModelContext) throws {

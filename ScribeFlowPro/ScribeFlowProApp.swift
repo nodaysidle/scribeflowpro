@@ -21,8 +21,16 @@ struct ScribeFlowProApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .task { scanForLocalModels() }
         }
         .modelContainer(modelContainer)
+    }
+
+    @MainActor
+    private func scanForLocalModels() {
+        let context = modelContainer.mainContext
+        let scanner = ModelManagerService()
+        scanner.scanAndRegisterLocalModels(modelContext: context)
     }
 
     private func createModelsDirectoryIfNeeded() {
