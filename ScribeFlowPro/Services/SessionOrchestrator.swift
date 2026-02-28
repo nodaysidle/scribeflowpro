@@ -63,6 +63,19 @@ final class SessionOrchestrator {
 
         sessionTask = Task {
             do {
+                // Auto-load Whisper model from settings if not already loaded
+                if await !whisperActor.isModelLoaded {
+                    if let modelID = resolveSelectedWhisper(modelContext: modelContext) {
+                        FileHandle.standardError.write(Data("[SFP] Auto-loading Whisper: \(modelID)\n".utf8))
+                        try await whisperActor.loadModel(modelID: modelID)
+                        FileHandle.standardError.write(Data("[SFP] Whisper loaded OK\n".utf8))
+                    } else {
+                        FileHandle.standardError.write(Data("[SFP] No Whisper model selected!\n".utf8))
+                    }
+                } else {
+                    FileHandle.standardError.write(Data("[SFP] Whisper already loaded\n".utf8))
+                }
+
                 let audioStream = try await audioCaptureActor.startCapture(inputDevice: device)
 
                 let whisperLoaded = await whisperActor.isModelLoaded
@@ -70,8 +83,6 @@ final class SessionOrchestrator {
                     let chunkStream = await whisperActor.transcribe(audioStream: audioStream)
 
                     for await chunk in chunkStream {
-                        guard !Task.isCancelled else { break }
-
                         let labeled = diarizer.assignSpeaker(
                             chunk: chunk,
                             currentSpeakerIndex: &currentSpeakerIndex,
@@ -82,9 +93,7 @@ final class SessionOrchestrator {
                 } else {
                     // No Whisper model — just capture audio, no live transcription
                     Self.logger.info("No Whisper model loaded — audio-only recording")
-                    for await _ in audioStream {
-                        guard !Task.isCancelled else { break }
-                    }
+                    for await _ in audioStream {}
                 }
             } catch {
                 Self.logger.error("Session error: \(error.localizedDescription)")
@@ -102,10 +111,24 @@ final class SessionOrchestrator {
         Self.logger.info("Stopping recording session")
         sessionState = .processing
 
+        // Stop audio first — this ends the audio stream, which causes
+        // Whisper to process remaining buffer and finish the chunk stream.
+        await audioCaptureActor.stopCapture()
+
+        // Wait for the session task to finish naturally (with a timeout).
+        // Do NOT cancel — cancellation would discard chunks Whisper hasn't yielded yet.
+        if let task = sessionTask {
+            _ = await Task {
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask { await task.value }
+                    group.addTask { try? await Task.sleep(for: .seconds(30)) }
+                    await group.next()
+                    group.cancelAll()
+                }
+            }.value
+        }
         sessionTask?.cancel()
         sessionTask = nil
-
-        await audioCaptureActor.stopCapture()
 
         let duration: TimeInterval
         if let start = recordingStartDate {
@@ -150,5 +173,23 @@ final class SessionOrchestrator {
         recordingStartDate = nil
         sessionState = .idle
         Self.logger.info("Session cancelled")
+    }
+
+    // MARK: - Model Resolution
+
+    private func resolveSelectedWhisper(modelContext: ModelContext) -> String? {
+        var settingsDesc = FetchDescriptor<AppSettings>()
+        settingsDesc.fetchLimit = 1
+        guard let settings = try? modelContext.fetch(settingsDesc).first,
+              let selectedID = settings.selectedWhisperModelID else {
+            return nil
+        }
+        guard let uuid = UUID(uuidString: selectedID) else { return nil }
+        let modelsDesc = FetchDescriptor<InstalledModel>()
+        guard let models = try? modelContext.fetch(modelsDesc),
+              let model = models.first(where: { $0.id == uuid }) else {
+            return nil
+        }
+        return model.huggingFaceRepo
     }
 }

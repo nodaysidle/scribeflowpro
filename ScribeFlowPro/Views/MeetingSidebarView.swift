@@ -3,10 +3,12 @@ import SwiftData
 
 struct MeetingSidebarView: View {
     @Binding var selectedMeeting: Meeting?
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Meeting.date, order: .reverse)
     private var meetings: [Meeting]
 
     @State private var searchText = ""
+    @State private var meetingToDelete: Meeting?
 
     private var filteredMeetings: [Meeting] {
         if searchText.isEmpty { return meetings }
@@ -20,9 +22,35 @@ struct MeetingSidebarView: View {
         List(filteredMeetings, selection: $selectedMeeting) { meeting in
             MeetingSidebarRow(meeting: meeting)
                 .tag(meeting)
+                .contextMenu {
+                    Button("Delete", role: .destructive) {
+                        meetingToDelete = meeting
+                    }
+                }
+                .swipeActions(edge: .trailing) {
+                    Button("Delete", role: .destructive) {
+                        meetingToDelete = meeting
+                    }
+                }
         }
         .searchable(text: $searchText, prompt: "Search meetings")
         .navigationTitle("Meetings")
+        .alert("Delete Meeting?", isPresented: .init(
+            get: { meetingToDelete != nil },
+            set: { if !$0 { meetingToDelete = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { meetingToDelete = nil }
+            Button("Delete", role: .destructive) {
+                if let meeting = meetingToDelete {
+                    if selectedMeeting == meeting { selectedMeeting = nil }
+                    modelContext.delete(meeting)
+                    try? modelContext.save()
+                    meetingToDelete = nil
+                }
+            }
+        } message: {
+            Text("This will permanently delete the meeting and its transcript.")
+        }
         .overlay {
             if filteredMeetings.isEmpty {
                 if searchText.isEmpty {
