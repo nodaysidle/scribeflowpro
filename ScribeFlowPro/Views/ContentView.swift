@@ -1,14 +1,19 @@
 import SwiftUI
 import SwiftData
+import os
 
 struct ContentView: View {
+    private static let logger = Logger(subsystem: "com.scribeflowpro", category: "ContentView")
+
     @Environment(\.modelContext) private var modelContext
+    @Query private var allModels: [InstalledModel]
     @State private var selectedMeeting: Meeting?
     @State private var orchestrator = SessionOrchestrator()
     @State private var selectedDevice: AudioDevice?
     @State private var availableDevices: [AudioDevice] = []
     @State private var showSettings = false
     @State private var showModelManager = false
+    @State private var hasScannedModels = false
 
     var body: some View {
         ZStack {
@@ -53,9 +58,17 @@ struct ContentView: View {
                 ModelManagerView()
             }
         }
-        .task {
+        .onAppear {
+            Self.logger.info("ContentView appeared, scanning models...")
             availableDevices = orchestrator.availableDevices
             selectedDevice = availableDevices.first(where: \.isDefault) ?? availableDevices.first
+            if !hasScannedModels {
+                scanForLocalModels()
+                hasScannedModels = true
+            }
+        }
+        .onChange(of: allModels.count) {
+            Self.logger.info("Model count changed to: \(allModels.count)")
         }
     }
 
@@ -88,6 +101,83 @@ struct ContentView: View {
                 )
             }
         }
+    }
+
+    private func scanForLocalModels() {
+        let modelsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Models", isDirectory: true)
+
+        Self.logger.warning("Scan: modelsDir=\(modelsDir.path)")
+
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: modelsDir.path) else {
+            Self.logger.warning("Scan: ~/Models does not exist")
+            return
+        }
+
+        let descriptor = FetchDescriptor<InstalledModel>()
+        let existing = (try? modelContext.fetch(descriptor)) ?? []
+        let existingPaths = Set(existing.map { $0.filePath })
+        Self.logger.warning("Scan: \(existing.count) already registered")
+
+        guard let topDirs = try? fm.contentsOfDirectory(
+            at: modelsDir, includingPropertiesForKeys: [.isDirectoryKey]
+        ) else {
+            Self.logger.warning("Scan: failed to list ~/Models")
+            return
+        }
+
+        Self.logger.warning("Scan: \(topDirs.count) top-level entries")
+
+        var registered = 0
+        for orgDir in topDirs {
+            guard (try? orgDir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+
+            let subdirs = (try? fm.contentsOfDirectory(at: orgDir, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+
+            for modelDir in subdirs {
+                guard (try? modelDir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+                guard fm.fileExists(atPath: modelDir.appendingPathComponent("config.json").path) else { continue }
+                guard !existingPaths.contains(modelDir.path) else { continue }
+
+                let repo = "\(orgDir.lastPathComponent)/\(modelDir.lastPathComponent)"
+                let modelType: ModelType = repo.lowercased().contains("whisper") ? .whisper : .llm
+
+                var totalSize: Int64 = 0
+                if let enumerator = fm.enumerator(at: modelDir, includingPropertiesForKeys: [.fileSizeKey]) {
+                    while let fileURL = enumerator.nextObject() as? URL {
+                        if let sz = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize {
+                            totalSize += Int64(sz)
+                        }
+                    }
+                }
+
+                var quantization: String?
+                if let data = try? Data(contentsOf: modelDir.appendingPathComponent("config.json")),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let qConfig = json["quantization_config"] as? [String: Any],
+                   let bits = qConfig["bits"] as? Int {
+                    quantization = "\(bits)bit"
+                }
+
+                let model = InstalledModel(
+                    name: repo,
+                    huggingFaceRepo: repo,
+                    filePath: modelDir.path,
+                    sizeBytes: totalSize,
+                    modelType: modelType,
+                    quantization: quantization
+                )
+                modelContext.insert(model)
+                registered += 1
+                Self.logger.warning("Scan: registered \(repo) (\(modelType.rawValue))")
+            }
+        }
+
+        if registered > 0 {
+            try? modelContext.save()
+        }
+        Self.logger.warning("Scan: done, registered \(registered) new models")
     }
 
     private func toggleRecording() {
