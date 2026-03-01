@@ -36,6 +36,23 @@ final class SummarizationService {
         modelContext: ModelContext,
         continuation: AsyncStream<String>.Continuation
     ) async {
+        // Auto-load LLM from settings if not already loaded
+        if await !llmActor.isModelLoaded {
+            guard let modelID = resolveSelectedLLM(modelContext: modelContext) else {
+                Self.logger.error("No LLM model selected in settings")
+                continuation.finish()
+                return
+            }
+            do {
+                Self.logger.info("Auto-loading LLM: \(modelID)")
+                try await llmActor.loadModel(modelID: modelID)
+            } catch {
+                Self.logger.error("Failed to load LLM: \(error.localizedDescription)")
+                continuation.finish()
+                return
+            }
+        }
+
         guard await llmActor.isModelLoaded else {
             Self.logger.error("Summarization called without loaded LLM")
             continuation.finish()
@@ -175,6 +192,22 @@ final class SummarizationService {
     ) -> AsyncStream<String> {
         AsyncStream { continuation in
             Task { @MainActor in
+                // Auto-load LLM from settings if not already loaded
+                if await !self.llmActor.isModelLoaded {
+                    guard let modelID = self.resolveSelectedLLM(modelContext: modelContext) else {
+                        Self.logger.error("No LLM model selected in settings")
+                        continuation.finish()
+                        return
+                    }
+                    do {
+                        try await self.llmActor.loadModel(modelID: modelID)
+                    } catch {
+                        Self.logger.error("Failed to load LLM for Q&A: \(error.localizedDescription)")
+                        continuation.finish()
+                        return
+                    }
+                }
+
                 guard await self.llmActor.isModelLoaded else {
                     Self.logger.error("Q&A called without loaded LLM")
                     continuation.finish()
@@ -225,6 +258,29 @@ final class SummarizationService {
 
     var isLLMLoaded: Bool {
         get async { await llmActor.isModelLoaded }
+    }
+
+    // MARK: - Model Resolution
+
+    private func resolveSelectedLLM(modelContext: ModelContext) -> String? {
+        let settings = AppSettings.fetchOrCreate(in: modelContext)
+        let modelsDesc = FetchDescriptor<InstalledModel>()
+        guard let models = try? modelContext.fetch(modelsDesc) else { return nil }
+        let llmModels = models.filter { $0.modelType == .llm }
+
+        // Try the explicitly selected model first
+        if let selectedID = settings.selectedLLMModelID,
+           let uuid = UUID(uuidString: selectedID),
+           let model = llmModels.first(where: { $0.id == uuid }) {
+            return model.huggingFaceRepo
+        }
+
+        // Auto-select the first available LLM model
+        guard let first = llmModels.first else { return nil }
+        settings.selectedLLMModelID = first.id.uuidString
+        try? modelContext.save()
+        FileHandle.standardError.write(Data("[SFP] Auto-selected LLM: \(first.huggingFaceRepo)\n".utf8))
+        return first.huggingFaceRepo
     }
 
     // MARK: - Private

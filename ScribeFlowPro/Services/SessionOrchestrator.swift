@@ -178,18 +178,23 @@ final class SessionOrchestrator {
     // MARK: - Model Resolution
 
     private func resolveSelectedWhisper(modelContext: ModelContext) -> String? {
-        var settingsDesc = FetchDescriptor<AppSettings>()
-        settingsDesc.fetchLimit = 1
-        guard let settings = try? modelContext.fetch(settingsDesc).first,
-              let selectedID = settings.selectedWhisperModelID else {
-            return nil
-        }
-        guard let uuid = UUID(uuidString: selectedID) else { return nil }
+        let settings = AppSettings.fetchOrCreate(in: modelContext)
         let modelsDesc = FetchDescriptor<InstalledModel>()
-        guard let models = try? modelContext.fetch(modelsDesc),
-              let model = models.first(where: { $0.id == uuid }) else {
-            return nil
+        guard let models = try? modelContext.fetch(modelsDesc) else { return nil }
+        let whisperModels = models.filter { $0.modelType == .whisper }
+
+        // Try the explicitly selected model first
+        if let selectedID = settings.selectedWhisperModelID,
+           let uuid = UUID(uuidString: selectedID),
+           let model = whisperModels.first(where: { $0.id == uuid }) {
+            return model.huggingFaceRepo
         }
-        return model.huggingFaceRepo
+
+        // Auto-select the first available Whisper model
+        guard let first = whisperModels.first else { return nil }
+        settings.selectedWhisperModelID = first.id.uuidString
+        try? modelContext.save()
+        FileHandle.standardError.write(Data("[SFP] Auto-selected Whisper: \(first.huggingFaceRepo)\n".utf8))
+        return first.huggingFaceRepo
     }
 }

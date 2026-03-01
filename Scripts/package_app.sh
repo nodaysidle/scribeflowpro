@@ -11,8 +11,16 @@ MACOS_MIN_VERSION="15.0"
 
 source "$ROOT/version.env"
 
-echo "==> Building $APP_NAME ($CONF)..."
-swift build -c "$CONF"
+echo "==> Building $APP_NAME ($CONF) with xcodebuild..."
+DERIVED_DATA="$ROOT/.build/xcode"
+xcodebuild -scheme "$APP_NAME" -configuration Release -destination "platform=macOS" \
+    -derivedDataPath "$DERIVED_DATA" 2>&1 | tail -5
+
+XCODE_BIN="$DERIVED_DATA/Build/Products/Release/$APP_NAME"
+if [[ ! -f "$XCODE_BIN" ]]; then
+    echo "ERROR: xcodebuild binary not found at $XCODE_BIN"
+    exit 1
+fi
 
 APP="$ROOT/${APP_NAME}.app"
 rm -rf "$APP"
@@ -43,13 +51,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Find and copy binary
-HOST_ARCH=$(uname -m)
-BIN_PATH=".build/${HOST_ARCH}-apple-macosx/$CONF/$APP_NAME"
-if [[ ! -f "$BIN_PATH" ]]; then
-    BIN_PATH=".build/$CONF/$APP_NAME"
-fi
-cp "$BIN_PATH" "$APP/Contents/MacOS/$APP_NAME"
+# Copy xcodebuild binary
+cp "$XCODE_BIN" "$APP/Contents/MacOS/$APP_NAME"
 chmod +x "$APP/Contents/MacOS/$APP_NAME"
 
 # Copy icon
@@ -60,19 +63,36 @@ fi
 # Copy entitlements
 ENTITLEMENTS="$ROOT/ScribeFlowPro/ScribeFlowPro.entitlements"
 
-# Copy SwiftPM resource bundles
-PREFERRED_BUILD_DIR="$(dirname "$BIN_PATH")"
+# Copy resource bundles from xcodebuild output (includes metallib for MLX)
+XCODE_PRODUCTS="$DERIVED_DATA/Build/Products/Release"
 shopt -s nullglob
-SWIFTPM_BUNDLES=("${PREFERRED_BUILD_DIR}/"*.bundle)
+XCODE_BUNDLES=("${XCODE_PRODUCTS}/"*.bundle)
 shopt -u nullglob
-if [[ ${#SWIFTPM_BUNDLES[@]} -gt 0 ]]; then
-    for bundle in "${SWIFTPM_BUNDLES[@]}"; do
+if [[ ${#XCODE_BUNDLES[@]} -gt 0 ]]; then
+    for bundle in "${XCODE_BUNDLES[@]}"; do
+        echo "    Bundling: $(basename "$bundle")"
         cp -R "$bundle" "$APP/Contents/Resources/"
     done
 fi
 
+# Also copy from SwiftPM build dir if any (fallback)
+HOST_ARCH=$(uname -m)
+SWIFTPM_DIR=".build/${HOST_ARCH}-apple-macosx/$CONF"
+if [[ -d "$SWIFTPM_DIR" ]]; then
+    shopt -s nullglob
+    SWIFTPM_BUNDLES=("${SWIFTPM_DIR}/"*.bundle)
+    shopt -u nullglob
+    for bundle in "${SWIFTPM_BUNDLES[@]}"; do
+        BNAME=$(basename "$bundle")
+        if [[ ! -d "$APP/Contents/Resources/$BNAME" ]]; then
+            echo "    Bundling (SwiftPM): $BNAME"
+            cp -R "$bundle" "$APP/Contents/Resources/"
+        fi
+    done
+fi
+
 # Copy frameworks if any
-FRAMEWORK_DIRS=(".build/$CONF" ".build/${HOST_ARCH}-apple-macosx/$CONF")
+FRAMEWORK_DIRS=("$XCODE_PRODUCTS" ".build/${HOST_ARCH}-apple-macosx/$CONF")
 for dir in "${FRAMEWORK_DIRS[@]}"; do
     if compgen -G "${dir}/"*.framework >/dev/null 2>&1; then
         cp -R "${dir}/"*.framework "$APP/Contents/Frameworks/"
