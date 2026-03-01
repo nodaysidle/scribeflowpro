@@ -7,7 +7,6 @@ enum SchemaV1: VersionedSchema {
         [
             Meeting.self,
             TranscriptSegment.self,
-            SpeakerProfile.self,
             AppSettings.self,
             InstalledModel.self,
         ]

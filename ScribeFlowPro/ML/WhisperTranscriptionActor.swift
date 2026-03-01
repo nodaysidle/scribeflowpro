@@ -17,7 +17,9 @@ actor WhisperTranscriptionActor {
 
     func loadModel(modelID: String) async throws {
         let whisperModel = Self.mapToWhisperKitModel(modelID)
+        #if DEBUG
         FileHandle.standardError.write(Data("[SFP] Loading WhisperKit model=\(whisperModel) from modelID=\(modelID)\n".utf8))
+        #endif
 
         do {
             let config = WhisperKitConfig(
@@ -28,14 +30,20 @@ actor WhisperTranscriptionActor {
                 load: true,
                 download: true
             )
+            #if DEBUG
             FileHandle.standardError.write(Data("[SFP] Calling WhisperKit init...\n".utf8))
+            #endif
             let kit = try await WhisperKit(config)
             pipeline.kit = kit
             self.isModelLoaded = true
             self.loadedModelID = modelID
+            #if DEBUG
             FileHandle.standardError.write(Data("[SFP] WhisperKit ready: \(whisperModel)\n".utf8))
+            #endif
         } catch {
+            #if DEBUG
             FileHandle.standardError.write(Data("[SFP] WhisperKit FAILED: \(error)\n".utf8))
+            #endif
             throw TranscriptionError.modelLoadFailed(underlying: error)
         }
     }
@@ -63,12 +71,16 @@ actor WhisperTranscriptionActor {
         continuation: AsyncStream<TranscriptChunk>.Continuation
     ) async {
         guard let kit = pipeline.kit else {
+            #if DEBUG
             FileHandle.standardError.write(Data("[SFP] runTranscription: no model!\n".utf8))
+            #endif
             continuation.finish()
             return
         }
 
+        #if DEBUG
         FileHandle.standardError.write(Data("[SFP] runTranscription started\n".utf8))
+        #endif
         var sampleBuffer: [Float] = []
         sampleBuffer.reserveCapacity(windowSamples)
         var totalSamplesProcessed: Int = 0
@@ -76,15 +88,19 @@ actor WhisperTranscriptionActor {
 
         for await audioSamples in audioStream {
             guard !Task.isCancelled else {
+                #if DEBUG
                 FileHandle.standardError.write(Data("[SFP] Task cancelled\n".utf8))
+                #endif
                 break
             }
 
             sampleBuffer.append(contentsOf: audioSamples.samples)
             chunkCount += 1
+            #if DEBUG
             if chunkCount % 50 == 1 {
                 FileHandle.standardError.write(Data("[SFP] Buffer: \(sampleBuffer.count)/\(windowSamples) samples (\(chunkCount) chunks)\n".utf8))
             }
+            #endif
 
             // Process when we have a full window
             while sampleBuffer.count >= windowSamples {
@@ -97,11 +113,17 @@ actor WhisperTranscriptionActor {
                 os_signpost(.begin, log: .default, name: "WhisperInference", signpostID: signpostID)
 
                 do {
+                    #if DEBUG
                     FileHandle.standardError.write(Data("[SFP] Transcribing window at \(windowStartTime)s...\n".utf8))
+                    #endif
                     let results: [TranscriptionResult] = try await kit.transcribe(audioArray: windowData)
+                    #if DEBUG
                     FileHandle.standardError.write(Data("[SFP] Got \(results.count) results\n".utf8))
+                    #endif
                     for result in results {
+                        #if DEBUG
                         FileHandle.standardError.write(Data("[SFP] Result: \(result.segments.count) segments, text=\(result.text.prefix(80))\n".utf8))
+                        #endif
                         for segment in result.segments {
                             let confidence = min(1.0, max(0.0, exp(segment.avgLogprob)))
                             let cleanedText = Self.cleanWhisperText(segment.text)
@@ -117,7 +139,9 @@ actor WhisperTranscriptionActor {
                         }
                     }
                 } catch {
+                    #if DEBUG
                     FileHandle.standardError.write(Data("[SFP] Window error: \(error)\n".utf8))
+                    #endif
                 }
 
                 os_signpost(.end, log: .default, name: "WhisperInference", signpostID: signpostID)
@@ -127,7 +151,9 @@ actor WhisperTranscriptionActor {
             }
         }
 
+        #if DEBUG
         FileHandle.standardError.write(Data("[SFP] Stream ended. Remaining buffer: \(sampleBuffer.count) samples\n".utf8))
+        #endif
 
         // Process remaining audio (at least 1 second)
         if sampleBuffer.count > Int(sampleRate) {

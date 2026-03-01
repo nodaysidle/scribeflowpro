@@ -11,8 +11,7 @@ struct MeetingDetailView: View {
     @State private var questionText = ""
     @State private var answerStream: AsyncStream<String>?
     @State private var streamedAnswer = ""
-
-    private let summarizationService = SummarizationService()
+    @State private var summarizationService = SummarizationService()
 
     var body: some View {
         ScrollView {
@@ -109,7 +108,11 @@ struct MeetingDetailView: View {
                         FontSize(14)
                     }
             } else if showSummaryStream {
-                if streamedSummary.isEmpty {
+                if let error = summarizationService.errorMessage {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .font(.subheadline)
+                } else if streamedSummary.isEmpty {
                     ProgressView("Generating summary...")
                         .controlSize(.small)
                 } else {
@@ -192,7 +195,11 @@ struct MeetingDetailView: View {
                 .disabled(questionText.trimmingCharacters(in: .whitespaces).isEmpty)
             }
 
-            if !streamedAnswer.isEmpty {
+            if let error = summarizationService.errorMessage, answerStream != nil {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .font(.subheadline)
+            } else if !streamedAnswer.isEmpty {
                 Markdown(streamedAnswer)
                     .markdownTextStyle {
                         FontSize(14)

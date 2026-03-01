@@ -29,16 +29,20 @@ actor LLMInferenceActor {
             throw LLMError.modelNotFound(modelID: modelID)
         }
 
+        #if DEBUG
         FileHandle.standardError.write(Data("[SFP-LLM] Loading model from: \(modelPath.path)\n".utf8))
+        #endif
 
         do {
             let configuration = ModelConfiguration(directory: modelPath)
             let container = try await LLMModelFactory.shared.loadContainer(
                 configuration: configuration
             ) { progress in
+                #if DEBUG
                 FileHandle.standardError.write(
                     Data("[SFP-LLM] Loading: \(Int(progress.fractionCompleted * 100))%\n".utf8)
                 )
+                #endif
             }
 
             self.modelContainer = container
@@ -54,11 +58,15 @@ actor LLMInferenceActor {
                 self.contextWindowSize = 4096
             }
 
+            #if DEBUG
             FileHandle.standardError.write(
                 Data("[SFP-LLM] Model loaded: \(modelID), context: \(contextWindowSize)\n".utf8)
             )
+            #endif
         } catch {
+            #if DEBUG
             FileHandle.standardError.write(Data("[SFP-LLM] Load FAILED: \(error)\n".utf8))
+            #endif
             throw LLMError.modelLoadFailed(underlying: error)
         }
     }
@@ -112,14 +120,18 @@ actor LLMInferenceActor {
         continuation: AsyncStream<String>.Continuation
     ) async {
         guard let container = modelContainer else {
+            #if DEBUG
             FileHandle.standardError.write(Data("[SFP-LLM] Generate: no model loaded\n".utf8))
+            #endif
             continuation.finish()
             return
         }
 
+        #if DEBUG
         FileHandle.standardError.write(
             Data("[SFP-LLM] Generating: prompt=\(prompt.count) chars, maxTokens=\(maxTokens)\n".utf8)
         )
+        #endif
 
         let signpostID = OSSignpostID(log: .default)
         os_signpost(.begin, log: .default, name: "LLMGeneration", signpostID: signpostID)
@@ -140,7 +152,9 @@ actor LLMInferenceActor {
             let stream = session.streamResponse(to: prompt)
             for try await chunk in stream {
                 guard !Task.isCancelled else {
+                    #if DEBUG
                     FileHandle.standardError.write(Data("[SFP-LLM] Generation cancelled\n".utf8))
+                    #endif
                     break
                 }
 
@@ -151,9 +165,11 @@ actor LLMInferenceActor {
                 // Stop sequence check
                 for stopSeq in stopSequences {
                     if generatedText.hasSuffix(stopSeq) {
+                        #if DEBUG
                         FileHandle.standardError.write(
                             Data("[SFP-LLM] Stop sequence: \(stopSeq)\n".utf8)
                         )
+                        #endif
                         os_signpost(.end, log: .default, name: "LLMGeneration", signpostID: signpostID)
                         continuation.finish()
                         return
@@ -161,11 +177,15 @@ actor LLMInferenceActor {
                 }
             }
         } catch {
+            #if DEBUG
             FileHandle.standardError.write(Data("[SFP-LLM] Generation error: \(error)\n".utf8))
+            #endif
         }
 
         os_signpost(.end, log: .default, name: "LLMGeneration", signpostID: signpostID)
+        #if DEBUG
         FileHandle.standardError.write(Data("[SFP-LLM] Generated ~\(tokenCount) chunks\n".utf8))
+        #endif
         continuation.finish()
     }
 }

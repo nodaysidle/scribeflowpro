@@ -13,6 +13,7 @@ final class SummarizationService {
 
     private(set) var isSummarizing = false
     private(set) var isAnswering = false
+    private(set) var errorMessage: String?
 
     // MARK: - Summarize Meeting
 
@@ -36,10 +37,13 @@ final class SummarizationService {
         modelContext: ModelContext,
         continuation: AsyncStream<String>.Continuation
     ) async {
+        errorMessage = nil
+
         // Auto-load LLM from settings if not already loaded
         if await !llmActor.isModelLoaded {
             guard let modelID = resolveSelectedLLM(modelContext: modelContext) else {
                 Self.logger.error("No LLM model selected in settings")
+                errorMessage = "No LLM model available. Download one in the Model Manager."
                 continuation.finish()
                 return
             }
@@ -48,6 +52,7 @@ final class SummarizationService {
                 try await llmActor.loadModel(modelID: modelID)
             } catch {
                 Self.logger.error("Failed to load LLM: \(error.localizedDescription)")
+                errorMessage = "Failed to load LLM: \(error.localizedDescription)"
                 continuation.finish()
                 return
             }
@@ -55,6 +60,7 @@ final class SummarizationService {
 
         guard await llmActor.isModelLoaded else {
             Self.logger.error("Summarization called without loaded LLM")
+            errorMessage = "LLM model could not be loaded."
             continuation.finish()
             return
         }
@@ -192,10 +198,13 @@ final class SummarizationService {
     ) -> AsyncStream<String> {
         AsyncStream { continuation in
             Task { @MainActor in
+                self.errorMessage = nil
+
                 // Auto-load LLM from settings if not already loaded
                 if await !self.llmActor.isModelLoaded {
                     guard let modelID = self.resolveSelectedLLM(modelContext: modelContext) else {
                         Self.logger.error("No LLM model selected in settings")
+                        self.errorMessage = "No LLM model available. Download one in the Model Manager."
                         continuation.finish()
                         return
                     }
@@ -203,6 +212,7 @@ final class SummarizationService {
                         try await self.llmActor.loadModel(modelID: modelID)
                     } catch {
                         Self.logger.error("Failed to load LLM for Q&A: \(error.localizedDescription)")
+                        self.errorMessage = "Failed to load LLM: \(error.localizedDescription)"
                         continuation.finish()
                         return
                     }
@@ -210,6 +220,7 @@ final class SummarizationService {
 
                 guard await self.llmActor.isModelLoaded else {
                     Self.logger.error("Q&A called without loaded LLM")
+                    self.errorMessage = "LLM model could not be loaded."
                     continuation.finish()
                     return
                 }
@@ -279,7 +290,7 @@ final class SummarizationService {
         guard let first = llmModels.first else { return nil }
         settings.selectedLLMModelID = first.id.uuidString
         try? modelContext.save()
-        FileHandle.standardError.write(Data("[SFP] Auto-selected LLM: \(first.huggingFaceRepo)\n".utf8))
+        Self.logger.info("Auto-selected LLM: \(first.huggingFaceRepo)")
         return first.huggingFaceRepo
     }
 

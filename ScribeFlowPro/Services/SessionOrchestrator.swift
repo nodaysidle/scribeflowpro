@@ -66,14 +66,14 @@ final class SessionOrchestrator {
                 // Auto-load Whisper model from settings if not already loaded
                 if await !whisperActor.isModelLoaded {
                     if let modelID = resolveSelectedWhisper(modelContext: modelContext) {
-                        FileHandle.standardError.write(Data("[SFP] Auto-loading Whisper: \(modelID)\n".utf8))
+                        Self.logger.info("Auto-loading Whisper: \(modelID)")
                         try await whisperActor.loadModel(modelID: modelID)
-                        FileHandle.standardError.write(Data("[SFP] Whisper loaded OK\n".utf8))
+                        Self.logger.info("Whisper loaded OK")
                     } else {
-                        FileHandle.standardError.write(Data("[SFP] No Whisper model selected!\n".utf8))
+                        Self.logger.warning("No Whisper model selected")
                     }
                 } else {
-                    FileHandle.standardError.write(Data("[SFP] Whisper already loaded\n".utf8))
+                    Self.logger.debug("Whisper already loaded")
                 }
 
                 let audioStream = try await audioCaptureActor.startCapture(inputDevice: device)
@@ -194,7 +194,7 @@ final class SessionOrchestrator {
         guard let first = whisperModels.first else { return nil }
         settings.selectedWhisperModelID = first.id.uuidString
         try? modelContext.save()
-        FileHandle.standardError.write(Data("[SFP] Auto-selected Whisper: \(first.huggingFaceRepo)\n".utf8))
+        Self.logger.info("Auto-selected Whisper: \(first.huggingFaceRepo)")
         return first.huggingFaceRepo
     }
 }
