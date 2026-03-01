@@ -25,3 +25,4 @@ icon_gen.py
 # Temporary files
 *.tmp
 *.log
+default.profraw
