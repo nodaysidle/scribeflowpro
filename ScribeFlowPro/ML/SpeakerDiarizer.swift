@@ -14,7 +14,7 @@ struct SpeakerDiarizer: Sendable {
         "Speaker E", "Speaker F", "Speaker G", "Speaker H",
     ]
 
-    init(gapThreshold: TimeInterval = 1.5, maxSpeakers: Int = 8) {
+    init(gapThreshold: TimeInterval = 4.0, maxSpeakers: Int = 8) {
         self.gapThreshold = gapThreshold
         self.maxSpeakers = min(maxSpeakers, Self.speakerLabels.count)
     }

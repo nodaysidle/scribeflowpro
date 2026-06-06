@@ -9,6 +9,8 @@ actor LLMInferenceActor {
 
     private var modelContainer: ModelContainer?
     private var chatSession: ChatSession?
+    private var bridgeModelFolder: URL?
+    private var usesMLXLMBridge = false
 
     private(set) var isModelLoaded = false
     private(set) var loadedModelID: String?
@@ -21,17 +23,26 @@ actor LLMInferenceActor {
             unloadModel()
         }
 
-        let modelsDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Models", isDirectory: true)
-        let modelPath = modelsDir.appendingPathComponent(modelID, isDirectory: true)
-
-        guard FileManager.default.fileExists(atPath: modelPath.path) else {
+        guard let modelPath = ModelPathResolver.existingDirectory(for: modelID) else {
             throw LLMError.modelNotFound(modelID: modelID)
         }
 
         #if DEBUG
         FileHandle.standardError.write(Data("[SFP-LLM] Loading model from: \(modelPath.path)\n".utf8))
         #endif
+
+        if Self.shouldUseBridge(for: modelPath) {
+            self.modelContainer = nil
+            self.bridgeModelFolder = modelPath
+            self.usesMLXLMBridge = true
+            self.isModelLoaded = true
+            self.loadedModelID = modelID
+            self.contextWindowSize = Self.readContextWindow(from: modelPath)
+            #if DEBUG
+            FileHandle.standardError.write(Data("[SFP-LLM] Using MLX-LM bridge for: \(modelPath.path)\n".utf8))
+            #endif
+            return
+        }
 
         do {
             let configuration = ModelConfiguration(directory: modelPath)
@@ -50,13 +61,7 @@ actor LLMInferenceActor {
             self.loadedModelID = modelID
 
             // Read context window from config
-            let configURL = modelPath.appendingPathComponent("config.json")
-            if let data = try? Data(contentsOf: configURL),
-               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                self.contextWindowSize = dict["max_position_embeddings"] as? Int ?? 4096
-            } else {
-                self.contextWindowSize = 4096
-            }
+            self.contextWindowSize = Self.readContextWindow(from: modelPath)
 
             #if DEBUG
             FileHandle.standardError.write(
@@ -75,6 +80,8 @@ actor LLMInferenceActor {
         Self.logger.info("Unloading LLM")
         chatSession = nil
         modelContainer = nil
+        bridgeModelFolder = nil
+        usesMLXLMBridge = false
         isModelLoaded = false
         loadedModelID = nil
         contextWindowSize = 0
@@ -119,6 +126,24 @@ actor LLMInferenceActor {
         stopSequences: [String],
         continuation: AsyncStream<String>.Continuation
     ) async {
+        if usesMLXLMBridge {
+            do {
+                let generated = try Self.generateWithMLXLMBridge(
+                    prompt: prompt,
+                    modelFolder: bridgeModelFolder,
+                    maxTokens: maxTokens,
+                    temperature: temperature
+                )
+                continuation.yield(generated)
+            } catch {
+                #if DEBUG
+                FileHandle.standardError.write(Data("[SFP-LLM] Bridge generation error: \(error)\n".utf8))
+                #endif
+            }
+            continuation.finish()
+            return
+        }
+
         guard let container = modelContainer else {
             #if DEBUG
             FileHandle.standardError.write(Data("[SFP-LLM] Generate: no model loaded\n".utf8))
@@ -187,5 +212,123 @@ actor LLMInferenceActor {
         FileHandle.standardError.write(Data("[SFP-LLM] Generated ~\(tokenCount) chunks\n".utf8))
         #endif
         continuation.finish()
+    }
+
+    // MARK: - MLX-LM Bridge
+
+    private struct MLXLMBridgeOutput: Decodable {
+        let text: String?
+        let error: String?
+    }
+
+    private static func shouldUseBridge(for modelPath: URL) -> Bool {
+        if ProcessInfo.processInfo.environment["SFP_FORCE_MLX_LM_BRIDGE"] == "1" {
+            return true
+        }
+        return FileManager.default.fileExists(atPath: modelPath.appendingPathComponent("model.safetensors").path)
+    }
+
+    private static func readContextWindow(from modelPath: URL) -> Int {
+        let configURL = modelPath.appendingPathComponent("config.json")
+        guard let data = try? Data(contentsOf: configURL),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return 4096
+        }
+        return dict["max_position_embeddings"] as? Int
+            ?? dict["sliding_window"] as? Int
+            ?? 4096
+    }
+
+    private static func generateWithMLXLMBridge(
+        prompt: String,
+        modelFolder: URL?,
+        maxTokens: Int,
+        temperature: Float
+    ) throws -> String {
+        guard let modelFolder else {
+            throw LLMError.noModelLoaded
+        }
+        let bridge = try locateMLXLMBridge()
+        let python = locateMLXBridgePython()
+        let process = Process()
+        process.executableURL = python
+        process.arguments = [
+            bridge.path,
+            "--model", modelFolder.path,
+            "--prompt", prompt,
+            "--max-tokens", String(maxTokens),
+            "--temperature", String(temperature)
+        ]
+
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            throw LLMError.inferenceError(underlying: error)
+        }
+
+        let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
+        let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+        guard process.terminationStatus == 0 else {
+            let message = String(data: errorData, encoding: .utf8) ?? "MLX-LM bridge failed"
+            throw LLMError.inferenceError(underlying: BridgeError(message))
+        }
+
+        do {
+            let decoded = try JSONDecoder().decode(MLXLMBridgeOutput.self, from: outputData)
+            if let error = decoded.error {
+                throw LLMError.inferenceError(underlying: BridgeError(error))
+            }
+            return decoded.text ?? ""
+        } catch let llmError as LLMError {
+            throw llmError
+        } catch {
+            let raw = String(data: outputData, encoding: .utf8) ?? ""
+            throw LLMError.inferenceError(underlying: BridgeError("Could not parse MLX-LM output: \(raw)"))
+        }
+    }
+
+    private static func locateMLXLMBridge() throws -> URL {
+        let fm = FileManager.default
+        let env = ProcessInfo.processInfo.environment
+        let candidates: [URL] = [
+            env["SFP_MLX_LM_BRIDGE"].map(URL.init(fileURLWithPath:)),
+            Bundle.main.resourceURL?.appendingPathComponent("Scripts/mlx_lm_generate.py"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appendingPathComponent("Scripts/mlx_lm_generate.py")
+        ].compactMap { $0 }
+        if let match = candidates.first(where: { fm.fileExists(atPath: $0.path) }) {
+            return match
+        }
+        throw LLMError.inferenceError(underlying: BridgeError("MLX-LM bridge script not found"))
+    }
+
+    private static func locateMLXBridgePython() -> URL {
+        let env = ProcessInfo.processInfo.environment
+        if let explicit = env["SFP_MLX_LM_PYTHON"] ?? env["SFP_MLX_WHISPER_PYTHON"], !explicit.isEmpty {
+            return URL(fileURLWithPath: explicit)
+        }
+        let appSupportVenv = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/ScribeFlowPro/venv/bin/python")
+        if FileManager.default.fileExists(atPath: appSupportVenv.path) {
+            return appSupportVenv
+        }
+        let repoVenv = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".venv-smoke/bin/python")
+        if FileManager.default.fileExists(atPath: repoVenv.path) {
+            return repoVenv
+        }
+        return URL(fileURLWithPath: "/usr/bin/python3")
+    }
+
+    private struct BridgeError: Error, LocalizedError {
+        let message: String
+        init(_ message: String) { self.message = message }
+        var errorDescription: String? { message }
     }
 }

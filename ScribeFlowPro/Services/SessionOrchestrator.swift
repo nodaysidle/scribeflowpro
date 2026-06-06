@@ -1,4 +1,5 @@
 import Foundation
+@preconcurrency import AVFoundation
 import SwiftData
 import os
 
@@ -173,6 +174,62 @@ final class SessionOrchestrator {
         recordingStartDate = nil
         sessionState = .idle
         Self.logger.info("Session cancelled")
+    }
+
+    func importAudioFile(_ url: URL, modelContext: ModelContext) async -> Meeting? {
+        guard case .idle = sessionState else {
+            Self.logger.warning("importAudioFile called in non-idle state")
+            return nil
+        }
+
+        sessionState = .processing
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess { url.stopAccessingSecurityScopedResource() }
+        }
+
+        do {
+            if await !whisperActor.isModelLoaded {
+                guard let modelID = resolveSelectedWhisper(modelContext: modelContext) else {
+                    throw TranscriptionError.noModelLoaded
+                }
+                try await whisperActor.loadModel(modelID: modelID)
+            }
+
+            let chunks = try await whisperActor.transcribe(audioFileURL: url)
+            var currentSpeaker = 0
+            var lastEnd: TimeInterval = 0
+            let labeledChunks = diarizer.assignSpeakers(
+                chunks: chunks,
+                currentSpeakerIndex: &currentSpeaker,
+                lastEndTime: &lastEnd
+            )
+            let rawTranscript = labeledChunks.map(\.text).joined(separator: " ")
+            let duration = max(labeledChunks.last?.endTime ?? 0, await audioDuration(for: url))
+            let title = url.deletingPathExtension().lastPathComponent
+
+            let meeting = try meetingStore.saveMeeting(
+                title: title,
+                date: Date(),
+                duration: duration,
+                rawTranscript: rawTranscript,
+                segments: labeledChunks,
+                audioTempURL: url,
+                modelContext: modelContext
+            )
+            sessionState = .idle
+            return meeting
+        } catch {
+            Self.logger.error("Import failed: \(error.localizedDescription)")
+            sessionState = .error("Import failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private nonisolated func audioDuration(for url: URL) async -> TimeInterval {
+        let asset = AVURLAsset(url: url)
+        guard let duration = try? await asset.load(.duration) else { return 0 }
+        return CMTimeGetSeconds(duration)
     }
 
     // MARK: - Model Resolution

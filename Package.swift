@@ -28,7 +28,8 @@ let package = Package(
                 .product(name: "Transformers", package: "swift-transformers"),
                 .product(name: "WhisperKit", package: "WhisperKit"),
             ],
-            path: "ScribeFlowPro"
+            path: "ScribeFlowPro",
+            exclude: ["ScribeFlowPro.entitlements"]
         ),
         .testTarget(
             name: "ScribeFlowProTests",

@@ -9,6 +9,7 @@ struct MeetingSidebarView: View {
 
     @State private var searchText = ""
     @State private var meetingToDelete: Meeting?
+    @State private var meetingStore = MeetingStore()
 
     private var filteredMeetings: [Meeting] {
         if searchText.isEmpty { return meetings }
@@ -43,8 +44,7 @@ struct MeetingSidebarView: View {
             Button("Delete", role: .destructive) {
                 if let meeting = meetingToDelete {
                     if selectedMeeting == meeting { selectedMeeting = nil }
-                    modelContext.delete(meeting)
-                    try? modelContext.save()
+                    try? meetingStore.deleteMeeting(meeting, modelContext: modelContext)
                     meetingToDelete = nil
                 }
             }

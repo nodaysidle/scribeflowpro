@@ -23,8 +23,7 @@ final class ModelManagerService {
     var activeDownloads: [String: DownloadProgress] = [:]
     var isDownloading = false
 
-    private let modelsDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Models", isDirectory: true)
+    private let modelsDirectory: URL = ModelPathResolver.modelsDirectory
 
     // MARK: - Download
 
@@ -85,8 +84,8 @@ final class ModelManagerService {
         }
 
         // 3. Create model directory
-        let repoName = repo.replacingOccurrences(of: "/", with: "_")
-        let modelDir = modelsDirectory.appendingPathComponent(repoName, isDirectory: true)
+        let repoName = ModelPathResolver.flattenedModelID(repo)
+        let modelDir = ModelPathResolver.storageDirectory(for: repo, in: modelsDirectory)
         try? FileManager.default.createDirectory(at: modelDir, withIntermediateDirectories: true)
 
         // 4. Download each file
@@ -272,13 +271,7 @@ final class ModelManagerService {
         guard !existingPaths.contains(modelDir.path) else { return }
 
         let fm = FileManager.default
-        let modelName = modelDir.lastPathComponent
-        let repoGuess: String
-        if let org = orgName {
-            repoGuess = "\(org)/\(modelName)"
-        } else {
-            repoGuess = modelName.replacingOccurrences(of: "_", with: "/")
-        }
+        let repoGuess = ModelPathResolver.repoID(from: modelDir, orgName: orgName)
 
         // Compute total size
         let enumerator = fm.enumerator(at: modelDir, includingPropertiesForKeys: [.fileSizeKey])

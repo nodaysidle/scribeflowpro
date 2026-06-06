@@ -3,6 +3,11 @@
 Build/
 DerivedData/
 *.app
+*.dmg
+*.zip
+*.tar.gz
+dist/
+.venv-smoke/
 
 # SwiftPM
 Package.resolved

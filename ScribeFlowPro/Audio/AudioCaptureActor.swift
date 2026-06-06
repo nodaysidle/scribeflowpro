@@ -68,7 +68,7 @@ actor AudioCaptureActor {
         )
 
         let stream = AsyncStream<AudioSamples>(
-            bufferingPolicy: .bufferingNewest(100)
+            bufferingPolicy: .unbounded
         ) { continuation in
             self.continuation = continuation
         }

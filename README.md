@@ -1,227 +1,137 @@
-<p align="center">
-  <img src="docs/icon-rounded.png" width="128" height="128" alt="ScribeFlow Pro icon" />
-</p>
+# ScribeFlow Pro
 
-<h1 align="center">ScribeFlow Pro</h1>
+**Offline meeting transcription and local summaries for macOS.**
 
-<p align="center">
-  <strong>Your meetings. Your Mac. Nothing leaves.</strong>
-</p>
+ScribeFlow Pro is a native macOS app from NODAYSIDLE for recording or importing meeting audio, transcribing it locally with Whisper, and producing local LLM summaries. No cloud transcription, no telemetry, no account.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS%2015%2B-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS 15+" />
-  <img src="https://img.shields.io/badge/chip-Apple%20Silicon-333333?style=flat-square&logo=apple&logoColor=white" alt="Apple Silicon" />
-  <img src="https://img.shields.io/badge/swift-6.0-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 6" />
-  <img src="https://img.shields.io/badge/inference-MLX-7C3AED?style=flat-square" alt="MLX" />
-  <img src="https://img.shields.io/badge/privacy-100%25%20offline-10B981?style=flat-square" alt="100% Offline" />
-  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License" />
-</p>
+- Platform: macOS 15+
+- Hardware: Apple Silicon recommended
+- UI: SwiftUI dark interface with Volt `#C8FF00` accent
+- Build system: Swift Package Manager
+- Source/release authority: GitLab
 
-<p align="center">
-  <img src="docs/screenshot.png" width="720" alt="ScribeFlow Pro — main interface" />
-</p>
+![ScribeFlow Pro screenshot](docs/20260228_053941.png)
 
----
+## What works
 
-ScribeFlow Pro is a **fully offline** macOS application that records meetings, transcribes them in real-time using on-device Whisper AI, and generates intelligent summaries with a local LLM. Everything runs on your Mac — no cloud, no subscriptions, no data leaves your machine. Ever.
+- Live microphone recording
+- Audio/video file import
+- Local meeting library with transcript/detail view
+- Local Whisper transcription from installed `mlx-community` models
+- Local MLX LLM summarization from installed `mlx-community` models
+- Model path detection under `~/Models/`
+- Packaged `.app` with bundled MLX bridge scripts
+- One-command local MLX runtime setup script
 
-## Why ScribeFlow Pro?
+## Privacy contract
 
-| Cloud transcription tools | ScribeFlow Pro |
-|:---|:---|
-| Your audio uploaded to third-party servers | **100% on-device** — zero network calls during operation |
-| $20–30/month subscriptions | **Free forever** — bring your own open-source models |
-| Requires constant internet | **Works offline** — airplane mode friendly |
-| Vendor lock-in on your data | **You own everything** — local SQLite + plain audio files |
-| Generic summaries | **Context-aware** — references your past meetings for smarter answers |
+ScribeFlow Pro does not use telemetry, analytics, remote transcription, or hosted summarization. Network access is only used when you explicitly download local models. After setup, transcription and summarization run on your Mac.
 
----
+## Install from release artifact
 
-## Features
-
-### On-Device Transcription
-Record from any microphone and get real-time transcription powered by [MLX](https://github.com/ml-explore/mlx)-optimized Whisper models running natively on Apple Silicon. Speaker labels distinguish who said what.
-
-### Local LLM Summarization
-Generate structured meeting summaries, action items, and key decisions using locally-run models (Llama, Mistral, Qwen, Phi). Tokens stream in real-time — no waiting.
-
-### Context Injection Engine
-Ask questions about any meeting and get answers that draw from your **entire meeting history**. The LLM cross-references past discussions, decisions, and action items automatically.
-
-### Meeting Knowledge Base
-Every transcript, summary, and action item is persisted in SwiftData with full-text search. Your meetings become a searchable, private knowledge base that grows smarter over time.
-
-### Liquid Glass Interface
-A carefully crafted dark-mode UI with animated mesh gradients, organic pulse animations tied to recording state, and a glassmorphism aesthetic that feels native to macOS.
-
-### Model Manager
-Browse, download, and manage MLX-format models from Hugging Face directly in the app. Auto-detects locally installed models. SHA256 verification on every download.
-
----
-
-## Quick Start
-
-### Requirements
-
-- macOS 15 (Sequoia) or later
-- Apple Silicon (M1 / M2 / M3 / M4)
-- 16 GB RAM recommended
-
-### Install
+1. Download `ScribeFlowPro-<version>.zip` from GitLab.
+2. Unzip it.
+3. Copy `ScribeFlowPro.app` to `/Applications`.
+4. Run the bundled setup once:
 
 ```bash
-# Clone the repo
-git clone https://github.com/salvadalba/nodaysidle-scribeflow-pro.git
-cd nodaysidle-scribeflow-pro
+/Applications/ScribeFlowPro.app/Contents/Resources/Scripts/setup_mlx_runtime.sh
+```
 
-# Build & package
-swift build -c release
-bash Scripts/package_app.sh release
+5. Open the app:
 
-# Install
-cp -R ScribeFlowPro.app /Applications/
+```bash
 open /Applications/ScribeFlowPro.app
 ```
 
-### Download Models
+The setup script creates:
 
-ScribeFlow Pro auto-detects models in `~/Models/`. The fastest way to get started:
-
-```bash
-# Install git-lfs (if needed)
-brew install git-lfs && git lfs install
-
-# Whisper — transcription (~1.5 GB)
-git clone https://huggingface.co/mlx-community/whisper-medium-mlx \
-  ~/Models/mlx-community/whisper-medium-mlx
-
-# Llama 3.2 — summarization & Q&A (~2 GB)
-git clone https://huggingface.co/mlx-community/Llama-3.2-3B-Instruct-4bit \
-  ~/Models/mlx-community/Llama-3.2-3B-Instruct-4bit
+```text
+~/Library/Application Support/ScribeFlowPro/venv
+~/Models/mlx-community_whisper-tiny-mlx-q4
+~/Models/mlx-community_Qwen2.5-0.5B-Instruct-4bit
 ```
 
-Or use the in-app Model Manager (toolbar arrow-down icon) to download models directly.
+## Local model smoke proof
 
-### Configure
+The repo contains a real local model smoke test. It generates/uses a WAV file, transcribes it with `mlx-community/whisper-tiny-mlx-q4`, then summarizes with `mlx-community/Qwen2.5-0.5B-Instruct-4bit`.
 
-1. Open **Settings** (gear icon) and select your downloaded Whisper + LLM models
-2. Choose your microphone input
-3. Click **Record** — you're live
+```bash
+say -v Samantha -o /tmp/scribeflowpro-smoke.aiff 'Scribe Flow Pro offline transcription smoke test. The local model should hear this sentence.'
+ffmpeg -y -i /tmp/scribeflowpro-smoke.aiff -ar 16000 -ac 1 /tmp/scribeflowpro-smoke.wav
+Scripts/setup_mlx_runtime.sh
+SFP_LOCAL_MODEL_SMOKE=1 \
+SFP_SMOKE_WHISPER_MODEL='mlx-community/whisper-tiny-mlx-q4' \
+SFP_SMOKE_LLM_MODEL='mlx-community/Qwen2.5-0.5B-Instruct-4bit' \
+SFP_SMOKE_AUDIO=/tmp/scribeflowpro-smoke.wav \
+swift test --filter localMLXModelsSmoke
+```
 
----
+Expected proof lines include:
 
-## Recommended Models
+```text
+SFP_SMOKE_TRANSCRIPT=scribe flow, pro offline transcription smoke test...
+SFP_SMOKE_SUMMARY=...
+Test localMLXModelsSmoke() passed
+```
 
-| Purpose | Model | Size | Notes |
-|:--------|:------|:-----|:------|
-| Transcription (best) | `mlx-community/whisper-large-v3-mlx` | ~3 GB | Highest accuracy, needs more RAM |
-| Transcription (fast) | `mlx-community/whisper-medium-mlx` | ~1.5 GB | Great balance for 16 GB machines |
-| Summarization | `mlx-community/Llama-3.2-3B-Instruct-4bit` | ~2 GB | Fast, good quality summaries |
+## Build, test, package
 
----
+```bash
+swift test
+swift build -c release
+Scripts/package_app.sh release
+```
+
+Create a downloadable zip:
+
+```bash
+VERSION=$(grep MARKETING_VERSION version.env | cut -d= -f2)
+rm -rf dist
+mkdir -p dist/ScribeFlowPro
+cp -R ScribeFlowPro.app dist/ScribeFlowPro/
+cp README.md dist/ScribeFlowPro/
+ditto -c -k --keepParent dist/ScribeFlowPro "dist/ScribeFlowPro-${VERSION}.zip"
+shasum -a 256 "dist/ScribeFlowPro-${VERSION}.zip"
+```
+
+## Model paths
+
+ScribeFlow Pro resolves both Hugging Face layouts:
+
+```text
+~/Models/mlx-community/whisper-tiny-mlx-q4
+~/Models/mlx-community_whisper-tiny-mlx-q4
+~/Models/mlx-community/Qwen2.5-0.5B-Instruct-4bit
+~/Models/mlx-community_Qwen2.5-0.5B-Instruct-4bit
+```
+
+Recommended starter models:
+
+- Transcription: `mlx-community/whisper-tiny-mlx-q4`
+- Summarization/Q&A: `mlx-community/Qwen2.5-0.5B-Instruct-4bit`
 
 ## Architecture
 
-```
+```text
 ScribeFlowPro/
-├── Audio/                  # AudioCaptureActor — CoreAudio recording
-├── ML/                     # WhisperTranscriptionActor, LLMInferenceActor,
-│                           # SpeakerDiarizer — all Swift actors for thread safety
-├── Models/                 # SwiftData entities (Meeting, TranscriptSegment,
-│                           # SpeakerProfile, AppSettings, InstalledModel)
-├── Services/               # SessionOrchestrator, SummarizationService,
-│                           # ContextInjectionService, ModelManagerService
-├── Views/                  # SwiftUI views with Liquid Glass design
-│   ├── ContentView         # Main window with sidebar + detail
-│   ├── MeetingSidebarView  # Searchable meeting list
-│   ├── MeetingDetailView   # Summary, transcript, Q&A
-│   ├── LiveTranscription   # Real-time streaming transcript
-│   ├── LiquidGlass         # Animated mesh gradient background
-│   └── ModelManagerView    # Download/manage models
-└── Utilities/              # Logger extensions, helpers
+├── Audio/                  CoreAudio/AVFoundation capture
+├── ML/                     Whisper and LLM actors
+├── Models/                 SwiftData entities
+├── Services/               Session, model, prompt, storage services
+├── Views/                  SwiftUI app UI
+└── Utilities/              Logging and helpers
 ```
 
-### Key Design Decisions
+Key implementation rules:
 
-| Decision | Rationale |
-|:---------|:----------|
-| **Swift actors** for all ML/audio | Thread-safe by construction under Swift 6 strict concurrency |
-| **MLX** over Core ML | Direct weight loading from Hugging Face safetensors, no conversion step |
-| **SwiftData** over Core Data | Modern persistence with automatic schema migrations |
-| **`@Observable`** over `ObservableObject` | Observation framework — finer-grained updates, less boilerplate |
-| **`AsyncStream`** for token output | Backpressure-aware streaming from actor-isolated inference loops |
-| **No Combine** | Pure async/await — simpler mental model, better with actors |
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|:------|:-----------|
-| Language | Swift 6.0 (strict concurrency) |
-| UI | SwiftUI + Observation framework |
-| Persistence | SwiftData (VersionedSchema V1) |
-| ML Inference | [MLX Swift](https://github.com/ml-explore/mlx-swift) 0.21+ |
-| Tokenization | [swift-transformers](https://github.com/huggingface/swift-transformers) 0.1.12+ |
-| Markdown | [swift-markdown-ui](https://github.com/gonzalezreal/swift-markdown-ui) 2.4+ |
-| Audio | CoreAudio / AVFoundation |
-| Build | Swift Package Manager (no Xcode project) |
-| Packaging | Shell scripts (`Scripts/package_app.sh`) |
-
----
-
-## Data & Privacy
-
-ScribeFlow Pro is built on a simple principle: **your data never leaves your machine**.
-
-- **Zero network calls** during operation — all transcription, summarization, and storage happen on-device
-- **Audio files** saved locally to `~/Library/Application Support/ScribeFlowPro/Audio/`
-- **Meeting data** stored in SwiftData (SQLite) within the app's container
-- **ML models** stored at `~/Models/` — downloaded once, used forever offline
-- **Temp files** auto-cleaned after 24 hours
-- **No telemetry, no analytics, no tracking** — not even crash reports leave your Mac
-
----
-
-## Development
-
-```bash
-# Build (debug)
-swift build
-
-# Build (release)
-swift build -c release
-
-# Run tests
-swift test
-
-# Package as .app
-bash Scripts/package_app.sh release
-
-# Dev loop (kill, build, launch)
-bash Scripts/compile_and_run.sh
-```
-
----
-
-## Roadmap
-
-- [ ] Export meetings to Markdown / PDF
-- [ ] Keyboard shortcuts for record/stop/summarize
-- [ ] Meeting templates (standup, 1:1, all-hands)
-- [ ] Speaker enrollment for better diarization
-- [ ] Sparkle auto-updates
-- [ ] Menu bar quick-record widget
-
----
+- Swift actors isolate audio and ML work.
+- SwiftData owns persisted meeting state.
+- Imported audio is copied into Application Support and deleted with its meeting.
+- Local model path resolution accepts nested and flat Hugging Face layouts.
+- SwiftPM packaging creates and ad-hoc signs `ScribeFlowPro.app`.
+- MLX bridge scripts are bundled inside the app resources.
 
 ## License
 
-MIT — do whatever you want with it.
-
----
-
-<p align="center">
-  <sub>Built with SwiftUI, MLX, and zero cloud dependencies.</sub><br />
-  <sub>Made by <a href="https://github.com/salvadalba">@salvadalba</a></sub>
-</p>
+MIT

@@ -70,13 +70,14 @@ final class MeetingStore {
 
         // Copy audio to persistent storage
         if let tempURL = audioTempURL {
-            let destURL = audioDirectory.appendingPathComponent("\(meeting.id.uuidString).wav")
+            let sourceExtension = tempURL.pathExtension.isEmpty ? "wav" : tempURL.pathExtension
+            let destURL = audioDirectory.appendingPathComponent("\(meeting.id.uuidString).\(sourceExtension)")
             do {
                 if FileManager.default.fileExists(atPath: destURL.path) {
                     try FileManager.default.removeItem(at: destURL)
                 }
                 try FileManager.default.copyItem(at: tempURL, to: destURL)
-                meeting.audioFilePath = "ScribeFlowPro/Audio/\(meeting.id.uuidString).wav"
+                meeting.audioFilePath = "ScribeFlowPro/Audio/\(meeting.id.uuidString).\(sourceExtension)"
             } catch {
                 throw MeetingStoreError.audioFileCopyFailed(underlying: error)
             }

@@ -6,19 +6,19 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 
 APP_NAME="ScribeFlowPro"
-BUNDLE_ID="com.scribeflowpro.app"
+BUNDLE_ID="com.nodaysidle.scribeflowpro"
 MACOS_MIN_VERSION="15.0"
 
 source "$ROOT/version.env"
 
-echo "==> Building $APP_NAME ($CONF) with xcodebuild..."
-DERIVED_DATA="$ROOT/.build/xcode"
-xcodebuild -scheme "$APP_NAME" -configuration Release -destination "platform=macOS" \
-    -derivedDataPath "$DERIVED_DATA" 2>&1 | tail -5
+echo "==> Building $APP_NAME ($CONF) with SwiftPM..."
+swift build -c "$CONF"
 
-XCODE_BIN="$DERIVED_DATA/Build/Products/Release/$APP_NAME"
-if [[ ! -f "$XCODE_BIN" ]]; then
-    echo "ERROR: xcodebuild binary not found at $XCODE_BIN"
+HOST_ARCH=$(uname -m)
+SWIFTPM_DIR="$ROOT/.build/${HOST_ARCH}-apple-macosx/$CONF"
+SWIFTPM_BIN="$SWIFTPM_DIR/$APP_NAME"
+if [[ ! -f "$SWIFTPM_BIN" ]]; then
+    echo "ERROR: SwiftPM binary not found at $SWIFTPM_BIN"
     exit 1
 fi
 
@@ -44,65 +44,47 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>${MACOS_MIN_VERSION}</string>
     <key>CFBundleIconFile</key><string>Icon</string>
     <key>NSMicrophoneUsageDescription</key><string>ScribeFlow Pro needs microphone access to record and transcribe meetings.</string>
-    <key>NSLocalNetworkUsageDescription</key><string>ScribeFlow Pro downloads ML models from Hugging Face.</string>
+    <key>NSLocalNetworkUsageDescription</key><string>ScribeFlow Pro downloads ML models from Hugging Face only when you explicitly use Model Manager.</string>
     <key>BuildTimestamp</key><string>${BUILD_TIMESTAMP}</string>
     <key>GitCommit</key><string>${GIT_COMMIT}</string>
 </dict>
 </plist>
 PLIST
 
-# Copy xcodebuild binary
-cp "$XCODE_BIN" "$APP/Contents/MacOS/$APP_NAME"
+cp "$SWIFTPM_BIN" "$APP/Contents/MacOS/$APP_NAME"
 chmod +x "$APP/Contents/MacOS/$APP_NAME"
 
-# Copy icon
 if [[ -f "$ROOT/Icon.icns" ]]; then
     cp "$ROOT/Icon.icns" "$APP/Contents/Resources/Icon.icns"
 fi
 
-# Copy entitlements
+if [[ -d "$ROOT/Scripts" ]]; then
+    mkdir -p "$APP/Contents/Resources/Scripts"
+    cp "$ROOT/Scripts/mlx_whisper_transcribe.py" "$APP/Contents/Resources/Scripts/" 2>/dev/null || true
+    cp "$ROOT/Scripts/mlx_lm_generate.py" "$APP/Contents/Resources/Scripts/" 2>/dev/null || true
+    cp "$ROOT/Scripts/setup_mlx_runtime.sh" "$APP/Contents/Resources/Scripts/" 2>/dev/null || true
+    chmod +x "$APP/Contents/Resources/Scripts/"* 2>/dev/null || true
+fi
+
 ENTITLEMENTS="$ROOT/ScribeFlowPro/ScribeFlowPro.entitlements"
 
-# Copy resource bundles from xcodebuild output (includes metallib for MLX)
-XCODE_PRODUCTS="$DERIVED_DATA/Build/Products/Release"
 shopt -s nullglob
-XCODE_BUNDLES=("${XCODE_PRODUCTS}/"*.bundle)
-shopt -u nullglob
-if [[ ${#XCODE_BUNDLES[@]} -gt 0 ]]; then
-    for bundle in "${XCODE_BUNDLES[@]}"; do
-        echo "    Bundling: $(basename "$bundle")"
-        cp -R "$bundle" "$APP/Contents/Resources/"
-    done
-fi
-
-# Also copy from SwiftPM build dir if any (fallback)
-HOST_ARCH=$(uname -m)
-SWIFTPM_DIR=".build/${HOST_ARCH}-apple-macosx/$CONF"
-if [[ -d "$SWIFTPM_DIR" ]]; then
-    shopt -s nullglob
-    SWIFTPM_BUNDLES=("${SWIFTPM_DIR}/"*.bundle)
-    shopt -u nullglob
-    for bundle in "${SWIFTPM_BUNDLES[@]}"; do
-        BNAME=$(basename "$bundle")
-        if [[ ! -d "$APP/Contents/Resources/$BNAME" ]]; then
-            echo "    Bundling (SwiftPM): $BNAME"
-            cp -R "$bundle" "$APP/Contents/Resources/"
-        fi
-    done
-fi
-
-# Copy frameworks if any
-FRAMEWORK_DIRS=("$XCODE_PRODUCTS" ".build/${HOST_ARCH}-apple-macosx/$CONF")
-for dir in "${FRAMEWORK_DIRS[@]}"; do
-    if compgen -G "${dir}/"*.framework >/dev/null 2>&1; then
-        cp -R "${dir}/"*.framework "$APP/Contents/Frameworks/"
-        chmod -R a+rX "$APP/Contents/Frameworks"
-        install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/$APP_NAME" 2>/dev/null || true
-        break
-    fi
+for bundle in "$SWIFTPM_DIR"/*.bundle; do
+    echo "    Bundling: $(basename "$bundle")"
+    cp -R "$bundle" "$APP/Contents/Resources/"
 done
 
-# Clean and sign
+for framework in "$SWIFTPM_DIR"/*.framework; do
+    echo "    Framework: $(basename "$framework")"
+    cp -R "$framework" "$APP/Contents/Frameworks/"
+done
+shopt -u nullglob
+
+if [[ -d "$APP/Contents/Frameworks" ]]; then
+    chmod -R a+rX "$APP/Contents/Frameworks"
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+fi
+
 chmod -R u+w "$APP"
 xattr -cr "$APP"
 find "$APP" -name '._*' -delete
@@ -112,6 +94,8 @@ if [[ -f "$ENTITLEMENTS" ]]; then
 else
     codesign --force --sign "-" "$APP"
 fi
+
+codesign --verify --deep --strict "$APP"
 
 echo "==> Created $APP"
 echo "    Version: $MARKETING_VERSION ($BUILD_NUMBER)"

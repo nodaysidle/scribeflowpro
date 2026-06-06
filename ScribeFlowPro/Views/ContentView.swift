@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 import os
 
 struct ContentView: View {
@@ -13,6 +14,7 @@ struct ContentView: View {
     @State private var availableDevices: [AudioDevice] = []
     @State private var showSettings = false
     @State private var showModelManager = false
+    @State private var showAudioImporter = false
     @State private var hasScannedModels = false
     @State private var modelManager = ModelManagerService()
 
@@ -27,6 +29,13 @@ struct ContentView: View {
             }
             .toolbar {
                 ToolbarItemGroup(placement: .secondaryAction) {
+                    Button {
+                        showAudioImporter = true
+                    } label: {
+                        Label("Import Audio", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(orchestrator.isRecording)
+
                     Button {
                         showSettings = true
                     } label: {
@@ -58,6 +67,13 @@ struct ContentView: View {
             NavigationStack {
                 ModelManagerView()
             }
+        }
+        .fileImporter(
+            isPresented: $showAudioImporter,
+            allowedContentTypes: [.audio, .movie],
+            allowsMultipleSelection: false
+        ) { result in
+            handleImportedAudio(result)
         }
         .onAppear {
             Self.logger.info("ContentView appeared, scanning models...")
@@ -95,10 +111,9 @@ struct ContentView: View {
             if let meeting = selectedMeeting {
                 MeetingDetailView(meeting: meeting)
             } else {
-                ContentUnavailableView(
-                    "No Meeting Selected",
-                    systemImage: "waveform",
-                    description: Text("Select a meeting from the sidebar or start recording.")
+                EmptyMeetingHero(
+                    hasWhisperModel: allModels.contains { $0.modelType == .whisper },
+                    hasLLMModel: allModels.contains { $0.modelType == .llm }
                 )
             }
         }
@@ -106,6 +121,21 @@ struct ContentView: View {
 
     private func scanForLocalModels() {
         modelManager.scanAndRegisterLocalModels(modelContext: modelContext)
+    }
+
+    private func handleImportedAudio(_ result: Result<[URL], any Error>) {
+        guard case .success(let urls) = result, let url = urls.first else {
+            if case .failure(let error) = result {
+                Self.logger.error("Audio import failed: \(error.localizedDescription)")
+            }
+            return
+        }
+
+        Task {
+            if let meeting = await orchestrator.importAudioFile(url, modelContext: modelContext) {
+                selectedMeeting = meeting
+            }
+        }
     }
 
     private func toggleRecording() {
@@ -122,6 +152,59 @@ struct ContentView: View {
         } else {
             orchestrator.startSession(device: selectedDevice, modelContext: modelContext)
         }
+    }
+}
+
+// MARK: - Empty State
+
+private struct EmptyMeetingHero: View {
+    let hasWhisperModel: Bool
+    let hasLLMModel: Bool
+
+    private let volt = Color(red: 0.78, green: 1.0, blue: 0.0)
+
+    var body: some View {
+        VStack(spacing: 22) {
+            Image(systemName: "waveform.and.magnifyingglass")
+                .font(.system(size: 58, weight: .semibold))
+                .foregroundStyle(volt)
+                .shadow(color: volt.opacity(0.35), radius: 18)
+
+            VStack(spacing: 8) {
+                Text("Offline meeting intelligence")
+                    .font(.largeTitle.bold())
+                Text("Record live audio or import a meeting file. Transcription and summaries stay on this Mac.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 520)
+            }
+
+            HStack(spacing: 12) {
+                ReadinessPill(title: "Whisper", ready: hasWhisperModel)
+                ReadinessPill(title: "Local LLM", ready: hasLLMModel)
+                ReadinessPill(title: "Private storage", ready: true)
+            }
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct ReadinessPill: View {
+    let title: String
+    let ready: Bool
+
+    var body: some View {
+        Label(title, systemImage: ready ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+            .font(.caption.bold())
+            .foregroundStyle(ready ? Color(red: 0.78, green: 1.0, blue: 0.0) : .orange)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.black.opacity(0.25), in: Capsule())
+            .overlay(
+                Capsule().stroke((ready ? Color(red: 0.78, green: 1.0, blue: 0.0) : .orange).opacity(0.35), lineWidth: 1)
+            )
     }
 }
 
