@@ -8,10 +8,11 @@ ScribeFlow Pro is a native macOS app from NODAYSIDLE for recording or importing 
 - Hardware: Apple Silicon recommended
 - UI: SwiftUI dark interface with Volt `#C8FF00` accent
 - Build system: Swift Package Manager
-- Source/release authority: GitLab
-- Latest release: https://gitlab.com/nodaysidle1/scribeflowpro/-/releases/v1.0.0
-- macOS ZIP: https://gitlab.com/nodaysidle1/scribeflowpro/-/packages/generic/scribeflowpro/1.0.0/ScribeFlowPro-1.0.0.zip
-- SHA256: `3ab7ee9d56c0bc0acf6377126c9c2578fcabc172d511fed7adb096a4e5b23ac9`
+- Source/release authority: GitHub
+- Source: https://github.com/nodaysidle/scribeflowpro
+- Latest release: https://github.com/nodaysidle/scribeflowpro/releases/tag/v1.0.0
+- macOS ZIP: https://github.com/nodaysidle/scribeflowpro/releases/download/v1.0.0/ScribeFlowPro-1.0.0.zip
+- SHA256: `beffaccfe10ab571f0d6237c56fd1b0e88adebeccb98029e51a479bfc24ee279`
 
 ![ScribeFlow Pro screenshot](docs/20260228_053941.png)
 
@@ -32,7 +33,7 @@ ScribeFlow Pro does not use telemetry, analytics, remote transcription, or hoste
 
 ## Install from release artifact
 
-1. Download `ScribeFlowPro-<version>.zip` from GitLab.
+1. Download `ScribeFlowPro-<version>.zip` from the GitHub release.
 2. Unzip it.
 3. Copy `ScribeFlowPro.app` to `/Applications`.
 4. Run the bundled setup once:
