@@ -1,3 +1,5 @@
+<img src=".github/social-preview.png" alt="ScribeFlow Pro — NODAYSIDLE" width="100%">
+
 # ScribeFlow Pro
 
 > Offline meeting transcription and local summaries for macOS.
