@@ -10,6 +10,8 @@ Owns local build, package, smoke, install, QA, and release helper scripts.
 - `mlx_whisper_transcribe.py`
 - `package_app.sh`
 - `setup_mlx_runtime.sh`
+- `attach-release-asset.sh`
+- `README-hybrid-release.md`
 
 ## Local Contracts
 
