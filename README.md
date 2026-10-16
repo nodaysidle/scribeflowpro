@@ -44,9 +44,10 @@ ScribeFlow Pro is a native macOS app for recording or importing meeting audio, t
 
 ## Installation
 
-1. Download `ScribeFlowPro-<version>.zip` from [GitHub Releases](https://github.com/nodaysidle/scribeflowpro/releases/tag/v1.0.0)
-   - SHA256: `beffaccfe10ab571f0d6237c56fd1b0e88adebeccb98029e51a479bfc24ee279`
-2. Unzip and copy `ScribeFlowPro.app` to `/Applications`
+1. Download [`ScribeFlowPro-1.0.0.dmg`](https://github.com/nodaysidle/scribeflowpro/releases/download/v1.0.0-dmg.20260727/ScribeFlowPro-1.0.0.dmg) from the [latest release (`v1.0.0-dmg.20260727`)](https://github.com/nodaysidle/scribeflowpro/releases/tag/v1.0.0-dmg.20260727) (10,826,475 bytes)
+   - SHA-256: `291e82cb553f56e1ba1936dd8e464e088769951e6f74aa05788f7abfea949f86`
+   - Verify: `shasum -a 256 ScribeFlowPro-1.0.0.dmg`, or download [`ScribeFlowPro-1.0.0.dmg.sha256`](https://github.com/nodaysidle/scribeflowpro/releases/download/v1.0.0-dmg.20260727/ScribeFlowPro-1.0.0.dmg.sha256) and run `shasum -a 256 -c ScribeFlowPro-1.0.0.dmg.sha256`
+2. Open the DMG and copy `ScribeFlowPro.app` to `/Applications`
 3. Run the bundled setup once:
 
 ```bash
